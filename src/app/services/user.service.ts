@@ -1,44 +1,57 @@
-import { Injectable, inject, EventEmitter, Output } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { User } from '../models/user.model';
-import { Observable, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { AuthService } from './auth.service';
+import { Observable, throwError } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class UserService {
-  
-  constructor(private http: HttpClient) { }
+  private apiUrl = 'http://localhost:9000/api/users';
 
-  private apiUrl = "http://localhost:9000/api/users";
+  constructor(private http: HttpClient, private authService: AuthService) {}
 
-  getUsers(): Observable<User[]> {
-/**
- 
-    let token = localStorage.getItem('access_token');
-    const httpHeaders: HttpHeaders = new HttpHeaders({
-      Authorization: 'Bearer' + localStorage.getItem('access_token')
-    })
-      ... get(apiURL, {headers: httpHeaders})
-    */
-    return this.http.get<User[]>(this.apiUrl).pipe(
-      catchError(this.handleError<User[]>('getUsers', [])) // Retorna un array vacío si hay error
+  getAllUsers(): Observable<any> {
+    return this.http.get(`${this.apiUrl}`).pipe(
+      catchError((error) => {
+        if (error.status === 401) {
+          // Intentar renovar el token
+          return this.authService.refreshAccessToken().pipe(
+            switchMap(() => {
+              // Reintentar la solicitud después de renovar el token
+              return this.http.get(`${this.apiUrl}`);
+            }),
+            catchError((refreshError) => {
+              // Si el refresh token falla, redirigir al login
+              this.authService.logout();
+              throw refreshError;
+            })
+          );
+        }
+        return throwError(() => error);
+      })
     );
   }
-
-  getUser(id: number): Observable<User> {
-
-    return this.http.get<User>(`${this.apiUrl}/${id}`).pipe(
-      catchError(this.handleError<User>('getUser')) // Retorna un observable vacío en caso de error
+  getUsers(): Observable<any> {
+    return this.http.get(`${this.apiUrl}`).pipe(
+      catchError((error) => {
+        if (error.status === 401) {
+          // Intentar renovar el token
+          return this.authService.refreshAccessToken().pipe(
+            switchMap(() => {
+              // Reintentar la solicitud después de renovar el token
+              return this.http.get(`${this.apiUrl}`);
+            }),
+            catchError((refreshError) => {
+              // Si el refresh token también falla, redirigir al login
+              this.authService.logout();
+              throw refreshError;
+            })
+          );
+        }
+        return throwError(() => error);
+      })
     );
-  }
-
-  // Método genérico para manejar errores
-  private handleError<T>(operation = 'operation', result?: T) {
-    return (error: any): Observable<T> => {
-      console.error(`${operation} failed: ${error.message}`);
-      return of(result as T); // Devuelve un valor predeterminado o vacío
-    };
   }
 }
